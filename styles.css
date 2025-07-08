@@ -1,0 +1,142 @@
+#product-detector-box {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #212529;
+  z-index: 99999;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  white-space: pre-wrap;
+  text-align: left;
+  max-width: 350px;
+  display: flex;
+  align-items: flex-start;
+}
+
+#product-detector-content {
+  flex-grow: 1;
+  overflow: hidden;
+}
+
+#product-detector-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-left: 10px;
+}
+
+#product-detector-drag-handle, #product-detector-close-button, #product-detector-debug-toggle {
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #6c757d;
+  padding: 0 5px;
+}
+
+#product-detector-close-button {
+  font-size: 24px;
+  line-height: 1;
+}
+
+#product-detector-box.is-product {
+  background-color: #e6ffed;
+  border-color: #b7e4c7;
+}
+
+#product-detector-box.not-product {
+  background-color: #fff1f2;
+  border-color: #ffc2c7;
+}
+
+#product-detector-content a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+#product-detector-content a:hover {
+  text-decoration: underline;
+}
+
+.truncate-text {
+  display: inline-block;
+  max-width: 250px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.price-table {
+  width: 100%;
+  margin-top: 5px;
+  border-collapse: collapse;
+}
+
+.price-table td {
+  padding: 4px 0;
+  vertical-align: middle;
+}
+
+.price-table .icon-cell {
+  width: 24px;
+  padding-right: 8px;
+}
+
+.price-table .icon-cell img {
+  width: 16px;
+  height: 16px;
+}
+
+.price-table .price-cell {
+  text-align: right;
+  font-weight: bold;
+  color: #28a745;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 10px;
+}
+.tab-button {
+  padding: 8px 12px;
+  cursor: pointer;
+  border: none;
+  background-color: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-size: 14px;
+}
+.tab-button.active {
+  border-bottom: 2px solid #007bff;
+  font-weight: bold;
+}
+.tab-content {
+  display: none;
+}
+.tab-content.active {
+  display: block;
+}
+
+.analysis-list {
+  list-style-type: disc;
+  padding-left: 20px;
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+.analysis-list li {
+  margin-bottom: 5px;
+}
+
+.hidden {
+  display: none !important;
+}
