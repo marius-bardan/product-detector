@@ -2,17 +2,19 @@ function extractProductDetails(document) {
     let details = { title: '', gtin: '', mpn: '', brand: '', price: '', currency: '', country: '' };
     const { hostname } = document.location;
 
+    // --- Step 1: Country Detection ---
     const tld = hostname.split('.').pop();
     const countryMap = { 'com': 'us', 'de': 'de', 'uk': 'uk', 'fr': 'fr', 'ca': 'ca', 'it': 'it', 'es': 'es', 'au': 'au', 'jp': 'jp', 'ro': 'ro' };
     let countryCode = countryMap[tld] || '';
     if (hostname.includes('.co.uk')) countryCode = 'uk';
     details.country = countryCode;
 
+    // --- Step 2: Extract from JSON-LD (Highest Priority) ---
     const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
     for (const script of jsonLdScripts) {
         try {
             const jsonData = JSON.parse(script.textContent);
-            const productData = jsonData['@type'] === 'Product' ? jsonData : (jsonData['@graph'] || []).find(item => item['@type'] === 'Product');
+            const productData = jsonData['@type']?.toUpperCase() === 'PRODUCT' ? jsonData : (jsonData['@graph'] || []).find(item => item['@type']?.toUpperCase() === 'PRODUCT');
             if (productData) {
                 details.title = productData.name || details.title;
                 details.gtin = productData.gtin13 || productData.gtin12 || productData.gtin8 || productData.gtin || details.gtin;
@@ -27,11 +29,36 @@ function extractProductDetails(document) {
                     details.currency = offer.priceCurrency || '';
                     details.price = offer.price || '';
                 }
-                if (details.title && details.brand && details.currency && details.price) break;
+                // If we found the most important details, we can stop.
+                if (details.title && details.brand && details.currency && details.price) {
+                    break;
+                }
             }
-        } catch (e) { /* Ignore parsing errors */ }
+        } catch (e) { console.error("Error parsing JSON-LD", e); }
     }
 
+    // --- Step 3: Global JS Variable Inspection (If JSON-LD fails) ---
+    if (!details.price && window.__remixContext) {
+        try {
+            const routeDataKey = Object.keys(window.__remixContext.state.loaderData).find(key => key.startsWith('routes/product.'));
+            if (routeDataKey) {
+                const productEventData = window.__remixContext.state.loaderData[routeDataKey].productData?.analyticsData?.product_event?.products?.[0];
+                if (productEventData) {
+                    details.brand = productEventData.brand;
+                    details.title = productEventData.name;
+                    details.price = productEventData.price;
+                    const formattedPrice = window.__remixContext.state.loaderData[routeDataKey].productData?.currentPrice?.formatted?.value?.value;
+                    if (formattedPrice && !details.currency) {
+                        if (formattedPrice.includes('$')) details.currency = 'USD';
+                        if (formattedPrice.includes('€')) details.currency = 'EUR';
+                        if (formattedPrice.includes('£')) details.currency = 'GBP';
+                    }
+                }
+            }
+        } catch (e) { console.error("Error parsing __remixContext", e); }
+    }
+
+    // --- Step 4: Fallback to Meta Tags ---
     if (!details.title) {
         details.title = document.querySelector('meta[property="og:title"]')?.content || document.title;
     }
@@ -51,50 +78,27 @@ function extractProductDetails(document) {
         details.mpn = document.querySelector('meta[property="product:mfr_part_no"]')?.content || '';
     }
 
-    if (hostname.includes('amazon.')) {
-        // Brand
-        if (!details.brand) {
-            const bylineInfo = document.querySelector('#bylineInfo');
-            if (bylineInfo && bylineInfo.innerText.includes('Visit the')) {
-                details.brand = bylineInfo.innerText.replace('Visit the', '').replace('Store', '').trim();
-            }
-        }
-        // Title
-        const productTitleElement = document.querySelector('#productTitle');
-        if (productTitleElement) {
-            details.title = productTitleElement.innerText.trim();
-        }
-        // Price (only look in the main price block)
-        const priceBlock = document.querySelector('#corePrice_desktop .a-price, #price .a-price, .priceToPay .a-price');
-        if (priceBlock && (!details.price || !details.currency)) {
-            const priceText = priceBlock.innerText.replace(/\s/g, ''); // Remove all whitespace
-            const priceMatch = priceText.match(/([$€£])([\d,.]+)/);
-            if (priceMatch && priceMatch[2]) {
-                details.price = priceMatch[2];
-                const currencySymbolMap = { '€': 'EUR', '$': 'USD', '£': 'GBP' };
-                details.currency = currencySymbolMap[priceMatch[1]] || '';
-            }
-        }
-    } else {
-        if (!details.price) {
-            const priceElements = document.querySelectorAll('[class*="price"], [id*="price"], [data-testid*="price"]');
-            for (const el of priceElements) {
-                const text = el.innerText;
-                if (text) {
-                    const priceMatch = text.match(/([$€£]|USD|EUR|GBP|RON|lei)?\s*([\d,.]*[\d])/i);
-                    if (priceMatch && priceMatch[2]) {
-                        details.price = priceMatch[2];
-                        const currencySymbol = priceMatch[1] || '';
-                        const currencyMap = { '€': 'EUR', '$': 'USD', '£': 'GBP', 'lei': 'RON', 'ron': 'RON' };
-                        details.currency = currencyMap[currencySymbol.toLowerCase()] || currencySymbol.toUpperCase() || details.currency;
-                        break;
-                    }
+    // --- Step 5: Generic DOM Heuristic for Price (if still not found) ---
+    if (!details.price) {
+        const priceElements = document.querySelectorAll('[class*="price"], [id*="price"], [data-testid*="price"]');
+        for (const el of priceElements) {
+            const text = el.innerText;
+            if (text) {
+                const priceMatch = text.match(/([$€£]|USD|EUR|GBP|RON|lei)?\s*([\d,.]*[\d])/i);
+                if (priceMatch && priceMatch[2]) {
+                    details.price = priceMatch[2];
+                    const currencySymbol = priceMatch[1] || '';
+                    const currencyMap = { '€': 'EUR', '$': 'USD', '£': 'GBP', 'lei': 'RON', 'ron': 'RON' };
+                    details.currency = currencyMap[currencySymbol.toLowerCase()] || currencySymbol.toUpperCase() || details.currency;
+                    break;
                 }
             }
         }
     }
 
+    // --- Step 6: Clean up the title for a better search query ---
     let cleanedTitle = details.title;
+    // Remove domain names and other noise
     cleanedTitle = cleanedTitle.replace(/on .*?\..*|\|.*$/g, '');
     cleanedTitle = cleanedTitle.replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
     const delimiters = [':', '|', ' - '];
@@ -109,35 +113,34 @@ function extractProductDetails(document) {
 }
 
 
+/**
+ * Checks if the current page is a product page by analyzing metadata, URL, and DOM.
+ * @param {Document} document The document object of the page to check.
+ * @returns {Promise<{result: boolean, reason: string, details: object}>} A promise that resolves to the result object.
+ */
 async function getProductPageStatus(document) {
     const defaultResponse = (reason) => ({ result: false, reason, details: {} });
     if (!document || !document.location) { return defaultResponse("A valid document object was not provided."); }
     const details = extractProductDetails(document);
 
     // --- Primary Detection: Metadata ---
+    if (details.price && details.title) { return { result: true, reason: "Found data in global JS variable or JSON-LD.", details }; }
     if (document.querySelector('meta[property="og:type"][content="product"]')) { return { result: true, reason: "Found og:type='product' meta tag.", details }; }
     if (document.querySelector('[itemscope][itemtype*="schema.org/Product"]')) { return { result: true, reason: "Found schema.org/Product microdata.", details }; }
-    const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
-    for (const script of jsonLdScripts) {
-        try {
-            const jsonData = JSON.parse(script.textContent);
-            if (jsonData['@type'] === 'Product' || (jsonData['@graph'] && jsonData['@graph'].some(item => item['@type'] === 'Product'))) {
-                return { result: true, reason: "Found 'Product' type in JSON-LD schema.", details };
-            }
-        } catch (e) { /* Ignore */ }
-    }
 
+    // --- Secondary Detection: URL Patterns combined with DOM validation ---
     const { hostname, pathname } = document.location;
     const siteRules = {
         'amazon': { urlPatterns: [/\/dp\//i], domSelectors: ['#addToCart_feature_div', '#buyNow_feature_div', 'input#add-to-cart-button', '#productTitle'] },
         'nike.com': { urlPatterns: [/\/t\//i], domSelectors: ['[data-test="add-to-cart"]', '[data-test="add-to-bag"]'] },
+        'saksfifthavenue.com': { urlPatterns: [/\/product\//i], domSelectors: ['.add-to-bag'] },
         'www.walmart.com': { urlPatterns: [/\/ip\//i], domSelectors: ['button[data-testid="add-to-cart-button"]'] },
         'www.target.com': { urlPatterns: [/\/p\//i], domSelectors: ['[data-test="shippingATCButton"]', '[data-test*="AddToCart"] button'] },
         'www.apple.com': { urlPatterns: [/\/shop\/buy/i], domSelectors: ['[data-autom="add-to-cart"]', '.as-productorder-addtocart'] },
         'shopify': { urlPatterns: [/\/products\//i], domSelectors: ['[name="add"]', 'button[type="submit"][name="add"]', '[data-section-type="product"]'] }
     };
-    const genericUrlPatterns = [ /\/products?\//i, /\/p\//i, /\/shop\//i, /\/item\//i, /\/detail/i ];
-    const genericDomSelectors = ['[class*="add-to-cart"]', '[class*="addtocart"]', '[data-test*="add-to-cart"]'];
+    const genericUrlPatterns = [ /\/product(s)?\//i, /\/p\//i, /\/shop\//i, /\/item\//i, /\/detail/i ];
+    const genericDomSelectors = ['[class*="add-to-cart"]', '[class*="addtocart"]', '[class*="add-to-bag"]', '[data-test*="add-to-cart"]'];
     const genericButtonTexts = ['add to bag', 'add to basket', 'adaugă în coș'];
 
     let applicableRule = null;
@@ -146,6 +149,8 @@ async function getProductPageStatus(document) {
         applicableRule = siteRules['amazon'];
     } else if (normalizedHostname === 'nike.com') {
         applicableRule = siteRules['nike.com'];
+    } else if (normalizedHostname === 'saksfifthavenue.com') {
+        applicableRule = siteRules['saksfifthavenue.com'];
     } else {
         applicableRule = siteRules[normalizedHostname];
     }
@@ -163,6 +168,7 @@ async function getProductPageStatus(document) {
         }
     }
 
+    // --- Tertiary Detection: Generic DOM Heuristics (if other methods fail) ---
     let priceElementFound = details.price !== '';
     let cartButtonFound = false;
 
